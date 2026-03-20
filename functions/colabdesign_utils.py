@@ -50,6 +50,10 @@ def binder_hallucination(design_name, starting_pdb, chain, target_hotspot_residu
         
 
     ### additional loss functions
+    if advanced_settings["use_ipsae_loss"]:
+        # ipSAE loss
+        add_ipsae_loss(af_model, advanced_settings["weights_ipsae"])
+
     if advanced_settings["use_rg_loss"]:
         # radius of gyration loss
         add_rg_loss(af_model, advanced_settings["weights_rg"])
@@ -260,6 +264,7 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, 
                 'pLDDT': round(prediction_metrics['plddt'], 2), 
                 'pTM': round(prediction_metrics['ptm'], 2), 
                 'i_pTM': round(prediction_metrics['i_ptm'], 2), 
+                'ipSAE': round(prediction_metrics.get('ipsae', 0), 2),
                 'pAE': round(prediction_metrics['pae'], 2), 
                 'i_pAE': round(prediction_metrics['i_pae'], 2)
             }
@@ -270,6 +275,7 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, 
                 (f"{model_num+1}_pLDDT", 'plddt', '>='),
                 (f"{model_num+1}_pTM", 'ptm', '>='),
                 (f"{model_num+1}_i_pTM", 'i_ptm', '>='),
+                (f"{model_num+1}_ipSAE", 'ipsae', '>='),
                 (f"{model_num+1}_pAE", 'pae', '<='),
                 (f"{model_num+1}_i_pAE", 'i_pae', '<='),
             ]
@@ -380,6 +386,39 @@ def add_rg_loss(self, weight=0.1):
 
     self._callbacks["model"]["loss"].append(loss_fn)
     self.opt["weights"]["rg"] = weight
+
+# Define ipSAE loss
+def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
+    def loss_ipsae(inputs, outputs):
+        # Access the differentiable PAE matrix
+        pae = outputs["predicted_alignment_error"]
+
+        target_mask = jnp.append(jnp.ones(self._target_len), jnp.zeros(self._binder_len))
+        binder_mask = jnp.append(jnp.zeros(self._target_len), jnp.ones(self._binder_len))
+
+        interchain_mask = jnp.outer(target_mask, binder_mask) + jnp.outer(binder_mask, target_mask)
+        valid_pairs_matrix = interchain_mask * (pae < pae_cutoff)
+
+        # Calculate dynamic d0 for each residue row
+        n0res = jnp.sum(valid_pairs_matrix, axis=1, keepdims=True)
+
+        L_safe = jnp.maximum(26.0, n0res)
+        d0 = jnp.maximum(1.0, 1.24 * jnp.power(L_safe - 15.0, 1.0 / 3.0) - 1.8)
+
+        # Calculate the TM-score transformation of the PAE matrix
+        pae_ptm = 1.0 / (1.0 + jnp.square(pae / d0))
+
+        # Extract the mean score for only the valid pairs
+        score_sum = jnp.sum(pae_ptm * valid_pairs_matrix)
+        valid_count = jnp.sum(valid_pairs_matrix) + 1e-8 # prevent division by zero
+
+        # Calculate final score
+        ipsae = score_sum / valid_count
+
+        return {"ipsae": 1.0 - ipsae}
+
+    self._callbacks["model"]["loss"].append(loss_ipsae)
+    self.opt["weights"]["ipsae"] = weight
 
 # Define interface pTM loss for colabdesign
 def add_i_ptm_loss(self, weight=0.1):
