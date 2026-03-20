@@ -398,15 +398,17 @@ def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
         step = breaks[1] - breaks[0]
         bin_centers = (jnp.append(0.0, breaks) + jnp.append(breaks, breaks[-1] + step)) / 2
         probs = jax.nn.softmax(logits, axis=-1)
+
         pae = jnp.sum(probs * bin_centers, axis=-1)
+        pae = jnp.squeeze(pae)
 
         target_mask = jnp.append(jnp.ones(self._target_len), jnp.zeros(self._binder_len))
         binder_mask = jnp.append(jnp.zeros(self._target_len), jnp.ones(self._binder_len))
 
         mask_TB = jnp.outer(target_mask, binder_mask)
-        valid_TB = mask_TB  * (pae < pae_cutoff)
+        valid_TB = jax.lax.stop_gradient(mask_TB  * (pae < pae_cutoff))
 
-        n0res_TB = jnp.sum(valid_TB, axis=1, keepdims=True)
+        n0res_TB = jnp.sum(valid_TB, axis=-1, keepdims=True)
         L_safe_TB = jnp.maximum(26.0, n0res_TB)
         d0_TB = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_TB - 15.0, 1.0 / 3.0) - 1.8)
 
@@ -417,9 +419,9 @@ def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
 
         # Evaluate Binder -> Target
         mask_BT = jnp.outer(binder_mask, target_mask)
-        valid_BT = mask_BT * (pae < pae_cutoff)
+        valid_BT = jax.lax.stop_gradient(mask_BT * (pae < pae_cutoff))
 
-        n0res_BT = jnp.sum(valid_BT, axis=1, keepdims=True)
+        n0res_BT = jnp.sum(valid_BT, axis=-1, keepdims=True)
         L_safe_BT = jnp.maximum(26.0, n0res_BT)
         d0_BT = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_BT - 15.0, 1.0 / 3.0) - 1.8)
 
