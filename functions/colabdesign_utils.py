@@ -391,7 +391,14 @@ def add_rg_loss(self, weight=0.1):
 def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
     def loss_ipsae(inputs, outputs):
         # Access the differentiable PAE matrix
-        pae = outputs["predicted_aligned_error"]
+        pae_dict = outputs["predicted_aligned_error"]
+        logits = pae_dict["logits"]
+        breaks = pae_dict["breaks"]
+
+        step = breaks[1] - breaks[0]
+        bin_centers = (jnp.append(0.0, breaks) + jnp.append(breaks, breaks[-1] + step)) / 2
+        probs = jax.nn.softmax(logits, axis=-1)
+        pae = jnp.sum(probs * bin_centers, axis=-1)
 
         target_mask = jnp.append(jnp.ones(self._target_len), jnp.zeros(self._binder_len))
         binder_mask = jnp.append(jnp.zeros(self._target_len), jnp.ones(self._binder_len))
