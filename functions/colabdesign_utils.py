@@ -413,7 +413,7 @@ def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
         d0_TB = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_TB - 15.0, 1.0 / 3.0) - 1.8)
 
         pae_ptm_TB = 1.0 / (1.0 + jnp.square(pae / d0_TB))
-        row_means_TB = jnp.sum(pae_ptm_TB * valid_TB, axis=1) / (n0res_TB + 1e-8)
+        row_means_TB = jnp.sum(pae_ptm_TB * valid_TB, axis=-1, keepdims=True) / (n0res_TB + 1e-8)
 
         score_TB = jnp.max(row_means_TB)
 
@@ -426,7 +426,7 @@ def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
         d0_BT = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_BT - 15.0, 1.0 / 3.0) - 1.8)
 
         pae_ptm_BT = 1.0 / (1.0 + jnp.square(pae / d0_BT))
-        row_means_BT = jnp.sum(pae_ptm_BT * valid_BT, axis=1) / (n0res_BT + 1e-8)
+        row_means_BT = jnp.sum(pae_ptm_BT * valid_BT, axis=-1, keepdims=True) / (n0res_BT + 1e-8)
 
         score_BT = jnp.max(row_means_BT)
 
