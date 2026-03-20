@@ -391,29 +391,37 @@ def add_rg_loss(self, weight=0.1):
 def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
     def loss_ipsae(inputs, outputs):
         # Access the differentiable PAE matrix
-        pae = outputs["predicted_alignment_error"]
+        pae = outputs["predicted_aligned_error"]
 
         target_mask = jnp.append(jnp.ones(self._target_len), jnp.zeros(self._binder_len))
         binder_mask = jnp.append(jnp.zeros(self._target_len), jnp.ones(self._binder_len))
 
-        interchain_mask = jnp.outer(target_mask, binder_mask) + jnp.outer(binder_mask, target_mask)
-        valid_pairs_matrix = interchain_mask * (pae < pae_cutoff)
+        mask_TB = jnp.outer(target_mask, binder_mask)
+        valid_TB = mask_TB  * (pae < pae_cutoff)
 
-        # Calculate dynamic d0 for each residue row
-        n0res = jnp.sum(valid_pairs_matrix, axis=1, keepdims=True)
+        n0res_TB = jnp.sum(valid_TB, axis=1, keepdims=True)
+        L_safe_TB = jnp.maximum(26.0, n0res_TB)
+        d0_TB = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_TB - 15.0, 1.0 / 3.0) - 1.8)
 
-        L_safe = jnp.maximum(26.0, n0res)
-        d0 = jnp.maximum(1.0, 1.24 * jnp.power(L_safe - 15.0, 1.0 / 3.0) - 1.8)
+        pae_ptm_TB = 1.0 / (1.0 + jnp.square(pae / d0_TB))
+        row_means_TB = jnp.sum(pae_ptm_TB * valid_TB, axis=1) / (n0res_TB + 1e-8)
 
-        # Calculate the TM-score transformation of the PAE matrix
-        pae_ptm = 1.0 / (1.0 + jnp.square(pae / d0))
+        score_TB = jnp.max(row_means_TB)
 
-        # Extract the mean score for only the valid pairs
-        score_sum = jnp.sum(pae_ptm * valid_pairs_matrix)
-        valid_count = jnp.sum(valid_pairs_matrix) + 1e-8 # prevent division by zero
+        # Evaluate Binder -> Target
+        mask_BT = jnp.outer(binder_mask, target_mask)
+        valid_BT = mask_BT * (pae < pae_cutoff)
 
-        # Calculate final score
-        ipsae = score_sum / valid_count
+        n0res_BT = jnp.sum(valid_BT, axis=1, keepdims=True)
+        L_safe_BT = jnp.maximum(26.0, n0res_BT)
+        d0_BT = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_BT - 15.0, 1.0 / 3.0) - 1.8)
+
+        pae_ptm_BT = 1.0 / (1.0 + jnp.square(pae / d0_BT))
+        row_means_BT = jnp.sum(pae_ptm_BT * valid_BT, axis=1) / (n0res_BT + 1e-8)
+
+        score_BT = jnp.max(row_means_BT)
+
+        ipsae = jnp.minimum(score_TB, score_BT)
 
         return {"ipsae": 1.0 - ipsae}
 
