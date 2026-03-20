@@ -1,3 +1,5 @@
+The purpose of this fork is to add ipSAE to the loss function.
+
 # BindCraft
 ![alt text](https://github.com/martinpacesa/BindCraft/blob/main/pipeline.png?raw=true)
 
