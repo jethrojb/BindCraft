@@ -268,9 +268,8 @@ def calculate_ipsae_numpy(pae, target_len, binder_len, pae_cutoff=10.0):
     score_BT = np.max(row_means_BT)
 
     # Return final maximum score
-    return float(np.maximum(score_TB, score_BT))
+    return float(np.minimum(score_TB, score_BT))
 
-# run prediction for binder with masked template target
 def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, target_pdb, chain, length, trajectory_pdb, prediction_models, advanced_settings, filters, design_paths, failure_csv, seed=None):
     prediction_stats = {}
 
@@ -301,11 +300,10 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, 
 
             # extract the statistics for the model
             stats = {
-                'pLDDT': round(prediction_metrics['plddt'], 2), 
-                'pTM': round(prediction_metrics['ptm'], 2), 
-                'i_pTM': round(prediction_metrics['i_ptm'], 2), 
-                'ipSAE': round(prediction_metrics.get('ipsae', np.nan), 2),
-                'pAE': round(prediction_metrics['pae'], 2), 
+                'pLDDT': round(prediction_metrics['plddt'], 2),
+                'pTM': round(prediction_metrics['ptm'], 2),
+                'i_pTM': round(prediction_metrics['i_ptm'], 2),
+                'pAE': round(prediction_metrics['pae'], 2),
                 'i_pAE': round(prediction_metrics['i_pae'], 2)
             }
             prediction_stats[model_num+1] = stats
@@ -315,7 +313,6 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, 
                 (f"{model_num+1}_pLDDT", 'plddt', '>='),
                 (f"{model_num+1}_pTM", 'ptm', '>='),
                 (f"{model_num+1}_i_pTM", 'i_ptm', '>='),
-                (f"{model_num+1}_ipSAE", 'ipsae', '>='),
                 (f"{model_num+1}_pAE", 'pae', '<='),
                 (f"{model_num+1}_i_pAE", 'i_pae', '<='),
             ]
