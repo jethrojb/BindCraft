@@ -238,6 +238,38 @@ def binder_hallucination(design_name, starting_pdb, chain, target_hotspot_residu
 
     return af_model
 
+def calculate_ipsae_numpy(pae, target_len, binder_len, pae_cutoff=10.0):
+    """Calculates the ipSAE score from a static PAE matrix."""
+    target_mask = np.append(np.ones(target_len), np.zeros(binder_len))
+    binder_mask = np.append(np.zeros(target_len), np.ones(binder_len))
+
+    # --- Evaluate Target -> Binder ---
+    mask_TB = np.outer(target_mask, binder_mask)
+    valid_TB = mask_TB * (pae < pae_cutoff)
+
+    n0res_TB = np.sum(valid_TB, axis=1, keepdims=True)
+    L_safe_TB = np.maximum(26.0, n0res_TB)
+    d0_TB = np.maximum(1.0, 1.24 * np.power(L_safe_TB - 15.0, 1.0 / 3.0) - 1.8)
+
+    pae_ptm_TB = 1.0 / (1.0 + np.square(pae / d0_TB))
+    row_means_TB = np.sum(pae_ptm_TB * valid_TB, axis=1, keepdims=True) / (n0res_TB + 1e-8)
+    score_TB = np.max(row_means_TB)
+
+    # --- Evaluate Binder -> Target ---
+    mask_BT = np.outer(binder_mask, target_mask)
+    valid_BT = mask_BT * (pae < pae_cutoff)
+
+    n0res_BT = np.sum(valid_BT, axis=1, keepdims=True)
+    L_safe_BT = np.maximum(26.0, n0res_BT)
+    d0_BT = np.maximum(1.0, 1.24 * np.power(L_safe_BT - 15.0, 1.0 / 3.0) - 1.8)
+
+    pae_ptm_BT = 1.0 / (1.0 + np.square(pae / d0_BT))
+    row_means_BT = np.sum(pae_ptm_BT * valid_BT, axis=1, keepdims=True) / (n0res_BT + 1e-8)
+    score_BT = np.max(row_means_BT)
+
+    # Return final maximum score
+    return float(np.maximum(score_TB, score_BT))
+
 # run prediction for binder with masked template target
 def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, target_pdb, chain, length, trajectory_pdb, prediction_models, advanced_settings, filters, design_paths, failure_csv, seed=None):
     prediction_stats = {}
@@ -259,12 +291,20 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, 
             prediction_model.save_pdb(complex_pdb)
             prediction_metrics = copy_dict(prediction_model.aux["log"]) # contains plddt, ptm, i_ptm, pae, i_pae
 
+            if advanced_settings.get("use_ipsae_loss", False):
+                pae_matrix = prediction_model.aux["pae"]
+                t_len = prediction_model._target_len
+                b_len = prediction_model._binder_len
+
+                ipsae_score = calculate_ipsae_numpy(pae_matrix, t_len, b_len)
+                prediction_metrics['ipsae'] = ipsae_score
+
             # extract the statistics for the model
             stats = {
                 'pLDDT': round(prediction_metrics['plddt'], 2), 
                 'pTM': round(prediction_metrics['ptm'], 2), 
                 'i_pTM': round(prediction_metrics['i_ptm'], 2), 
-                'ipSAE': round(prediction_metrics.get('ipsae', 0), 2),
+                'ipSAE': round(prediction_metrics.get('ipsae', np.nan), 2),
                 'pAE': round(prediction_metrics['pae'], 2), 
                 'i_pAE': round(prediction_metrics['i_pae'], 2)
             }
@@ -432,7 +472,7 @@ def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
 
         ipsae = jnp.minimum(score_TB, score_BT)
 
-        return {"ipsae": 1.0 - ipsae}
+        return {"ipsae": ipsae}
 
     self._callbacks["model"]["loss"].append(loss_ipsae)
     self.opt["weights"]["ipsae"] = weight
