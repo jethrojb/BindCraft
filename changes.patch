@@ -8,11 +8,226 @@ index 89b3855..8eaafbc 100644
  # BindCraft
  ![alt text](https://github.com/martinpacesa/BindCraft/blob/main/pipeline.png?raw=true)
  
-diff --git a/functions/$MYVIMRC b/functions/$MYVIMRC
+diff --git a/bindcraft.py b/bindcraft.py
+index 44eca69..2288e6d 100644
+--- a/bindcraft.py
++++ b/bindcraft.py
+@@ -151,7 +151,7 @@ while True:
+ 
+             # save trajectory statistics into CSV
+             trajectory_data = [design_name, advanced_settings["design_algorithm"], length, seed, helicity_value, target_settings["target_hotspot_residues"], trajectory_sequence, trajectory_interface_residues, 
+-                                trajectory_metrics['plddt'], trajectory_metrics['ptm'], trajectory_metrics['i_ptm'], trajectory_metrics['pae'], trajectory_metrics['i_pae'],
++                                trajectory_metrics['plddt'], trajectory_metrics['ptm'], trajectory_metrics['i_ptm'], trajectory_metrics.get('ipsae', 0), trajectory_metrics['pae'], trajectory_metrics['i_pae'],
+                                 trajectory_i_plddt, trajectory_ss_plddt, num_clashes_trajectory, num_clashes_relaxed, trajectory_interface_scores['binder_score'],
+                                 trajectory_interface_scores['surface_hydrophobicity'], trajectory_interface_scores['interface_sc'], trajectory_interface_scores['interface_packstat'],
+                                 trajectory_interface_scores['interface_dG'], trajectory_interface_scores['interface_dSASA'], trajectory_interface_scores['interface_dG_SASA_ratio'],
+@@ -202,6 +202,10 @@ while True:
+                     # compile complex prediction model
+                     complex_prediction_model = mk_afdesign_model(protocol="binder", num_recycles=advanced_settings["num_recycles_validation"], data_dir=advanced_settings["af_params_dir"], 
+                                                                 use_multimer=multimer_validation, use_initial_guess=advanced_settings["predict_initial_guess"], use_initial_atom_pos=advanced_settings["predict_bigbang"])
++
++                    if advanced_settings.get("use_ipsae_loss", False):
++                        add_ipsae_loss(complex_prediction_model, advanced_settings.get("weights_ipsae", 0.1))
++
+                     if advanced_settings["predict_initial_guess"] or advanced_settings["predict_bigbang"]:
+                         complex_prediction_model.prep_inputs(pdb_filename=trajectory_pdb, chain='A', binder_chain='B', binder_len=length, use_binder_template=True, rm_target_seq=advanced_settings["rm_template_seq_predict"],
+                                                             rm_target_sc=advanced_settings["rm_template_sc_predict"], rm_template_ic=True)
+@@ -337,7 +341,7 @@ while True:
+ 
+                         # Insert statistics about MPNN design into CSV, will return None if corresponding model does note exist
+                         model_numbers = range(1, 6)
+-                        statistics_labels = ['pLDDT', 'pTM', 'i_pTM', 'pAE', 'i_pAE', 'i_pLDDT', 'ss_pLDDT', 'Unrelaxed_Clashes', 'Relaxed_Clashes', 'Binder_Energy_Score', 'Surface_Hydrophobicity',
++                        statistics_labels = ['pLDDT', 'pTM', 'i_pTM', 'ipSAE', 'pAE', 'i_pAE', 'i_pLDDT', 'ss_pLDDT', 'Unrelaxed_Clashes', 'Relaxed_Clashes', 'Binder_Energy_Score', 'Surface_Hydrophobicity',
+                                             'ShapeComplementarity', 'PackStat', 'dG', 'dSASA', 'dG/dSASA', 'Interface_SASA_%', 'Interface_Hydrophobicity', 'n_InterfaceResidues', 'n_InterfaceHbonds', 'InterfaceHbondsPercentage',
+                                             'n_InterfaceUnsatHbonds', 'InterfaceUnsatHbondsPercentage', 'Interface_Helix%', 'Interface_BetaSheet%', 'Interface_Loop%', 'Binder_Helix%',
+                                             'Binder_BetaSheet%', 'Binder_Loop%', 'InterfaceAAs', 'Hotspot_RMSD', 'Target_RMSD']
+diff --git a/changes.patch b/changes.patch
 new file mode 100644
-index 0000000..e69de29
+index 0000000..8f52dfb
+--- /dev/null
++++ b/changes.patch
+@@ -0,0 +1,179 @@
++diff --git a/README.md b/README.md
++index 89b3855..8eaafbc 100644
++--- a/README.md
+++++ b/README.md
++@@ -1,3 +1,5 @@
+++The purpose of this fork is to add ipSAE to the loss function.
+++
++ # BindCraft
++ ![alt text](https://github.com/martinpacesa/BindCraft/blob/main/pipeline.png?raw=true)
++ 
++diff --git a/functions/$MYVIMRC b/functions/$MYVIMRC
++new file mode 100644
++index 0000000..e69de29
++diff --git a/functions/colabdesign_utils.py b/functions/colabdesign_utils.py
++index 4bb1db5..973ea3d 100644
++--- a/functions/colabdesign_utils.py
+++++ b/functions/colabdesign_utils.py
++@@ -50,6 +50,10 @@ def binder_hallucination(design_name, starting_pdb, chain, target_hotspot_residu
++         
++ 
++     ### additional loss functions
+++    if advanced_settings["use_ipsae_loss"]:
+++        # ipSAE loss
+++        add_ipsae_loss(af_model, advanced_settings["weights_ipsae"])
+++
++     if advanced_settings["use_rg_loss"]:
++         # radius of gyration loss
++         add_rg_loss(af_model, advanced_settings["weights_rg"])
++@@ -260,6 +264,7 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name,
++                 'pLDDT': round(prediction_metrics['plddt'], 2), 
++                 'pTM': round(prediction_metrics['ptm'], 2), 
++                 'i_pTM': round(prediction_metrics['i_ptm'], 2), 
+++                'ipSAE': round(prediction_metrics.get('ipsae', 0), 2),
++                 'pAE': round(prediction_metrics['pae'], 2), 
++                 'i_pAE': round(prediction_metrics['i_pae'], 2)
++             }
++@@ -270,6 +275,7 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name,
++                 (f"{model_num+1}_pLDDT", 'plddt', '>='),
++                 (f"{model_num+1}_pTM", 'ptm', '>='),
++                 (f"{model_num+1}_i_pTM", 'i_ptm', '>='),
+++                (f"{model_num+1}_ipSAE", 'ipsae', '>='),
++                 (f"{model_num+1}_pAE", 'pae', '<='),
++                 (f"{model_num+1}_i_pAE", 'i_pae', '<='),
++             ]
++@@ -381,6 +387,47 @@ def add_rg_loss(self, weight=0.1):
++     self._callbacks["model"]["loss"].append(loss_fn)
++     self.opt["weights"]["rg"] = weight
++ 
+++# Define ipSAE loss
+++def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
+++    def loss_ipsae(inputs, outputs):
+++        # Access the differentiable PAE matrix
+++        pae = outputs["predicted_aligned_error"]
+++
+++        target_mask = jnp.append(jnp.ones(self._target_len), jnp.zeros(self._binder_len))
+++        binder_mask = jnp.append(jnp.zeros(self._target_len), jnp.ones(self._binder_len))
+++
+++        mask_TB = jnp.outer(target_mask, binder_mask)
+++        valid_TB = mask_TB  * (pae < pae_cutoff)
+++
+++        n0res_TB = jnp.sum(valid_TB, axis=1, keepdims=True)
+++        L_safe_TB = jnp.maximum(26.0, n0res_TB)
+++        d0_TB = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_TB - 15.0, 1.0 / 3.0) - 1.8)
+++
+++        pae_ptm_TB = 1.0 / (1.0 + jnp.square(pae / d0_TB))
+++        row_means_TB = jnp.sum(pae_ptm_TB * valid_TB, axis=1) / (n0res_TB + 1e-8)
+++
+++        score_TB = jnp.max(row_means_TB)
+++
+++        # Evaluate Binder -> Target
+++        mask_BT = jnp.outer(binder_mask, target_mask)
+++        valid_BT = mask_BT * (pae < pae_cutoff)
+++
+++        n0res_BT = jnp.sum(valid_BT, axis=1, keepdims=True)
+++        L_safe_BT = jnp.maximum(26.0, n0res_BT)
+++        d0_BT = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_BT - 15.0, 1.0 / 3.0) - 1.8)
+++
+++        pae_ptm_BT = 1.0 / (1.0 + jnp.square(pae / d0_BT))
+++        row_means_BT = jnp.sum(pae_ptm_BT * valid_BT, axis=1) / (n0res_BT + 1e-8)
+++
+++        score_BT = jnp.max(row_means_BT)
+++
+++        ipsae = jnp.minimum(score_TB, score_BT)
+++
+++        return {"ipsae": 1.0 - ipsae}
+++
+++    self._callbacks["model"]["loss"].append(loss_ipsae)
+++    self.opt["weights"]["ipsae"] = weight
+++
++ # Define interface pTM loss for colabdesign
++ def add_i_ptm_loss(self, weight=0.1):
++     def loss_iptm(inputs, outputs):
++diff --git a/functions/generic_utils.py b/functions/generic_utils.py
++index bd6cbce..7582f3e 100644
++--- a/functions/generic_utils.py
+++++ b/functions/generic_utils.py
++@@ -15,7 +15,7 @@ import numpy as np
++ # Define labels for dataframes
++ def generate_dataframe_labels():
++     # labels for trajectory
++-    trajectory_labels = ['Design', 'Protocol', 'Length', 'Seed', 'Helicity', 'Target_Hotspot', 'Sequence', 'InterfaceResidues', 'pLDDT', 'pTM', 'i_pTM', 'pAE', 'i_pAE', 'i_pLDDT', 'ss_pLDDT', 'Unrelaxed_Clashes',
+++    trajectory_labels = ['Design', 'Protocol', 'Length', 'Seed', 'Helicity', 'Target_Hotspot', 'Sequence', 'InterfaceResidues', 'pLDDT', 'pTM', 'i_pTM', 'ipSAE', 'pAE', 'i_pAE', 'i_pLDDT', 'ss_pLDDT', 'Unrelaxed_Clashes',
++                         'Relaxed_Clashes', 'Binder_Energy_Score', 'Surface_Hydrophobicity', 'ShapeComplementarity', 'PackStat', 'dG', 'dSASA', 'dG/dSASA', 'Interface_SASA_%', 'Interface_Hydrophobicity', 'n_InterfaceResidues',
++                         'n_InterfaceHbonds', 'InterfaceHbondsPercentage', 'n_InterfaceUnsatHbonds', 'InterfaceUnsatHbondsPercentage', 'Interface_Helix%', 'Interface_BetaSheet%', 'Interface_Loop%',
++                         'Binder_Helix%', 'Binder_BetaSheet%', 'Binder_Loop%', 'InterfaceAAs', 'Target_RMSD', 'TrajectoryTime', 'Notes', 'TargetSettings', 'Filters', 'AdvancedSettings']
++diff --git a/settings_advanced/ipsae_defaults.json b/settings_advanced/ipsae_defaults.json
++new file mode 100644
++index 0000000..38b4bcc
++--- /dev/null
+++++ b/settings_advanced/ipsae_defaults.json
++@@ -0,0 +1,68 @@
+++{
+++    "omit_AAs": "C",
+++    "force_reject_AA": false,
+++    "use_multimer_design": true,
+++    "design_algorithm": "4stage",
+++    "sample_models": true,
+++    "rm_template_seq_design": false,
+++    "rm_template_seq_predict": false,
+++    "rm_template_sc_design": false,
+++    "rm_template_sc_predict": false,
+++    "predict_initial_guess": false,
+++    "predict_bigbang": false,
+++    "soft_iterations": 75,
+++    "temporary_iterations": 45,
+++    "hard_iterations": 5,
+++    "greedy_iterations": 15,
+++    "greedy_percentage": 1,
+++    "save_design_animations": true,
+++    "save_design_trajectory_plots": true,
+++    "weights_plddt": 0.1,
+++    "weights_pae_intra": 0.4,
+++    "weights_pae_inter": 0.1,
+++    "weights_con_intra": 1.0,
+++    "weights_con_inter": 1.0,
+++    "intra_contact_distance": 14.0,
+++    "inter_contact_distance": 20.0,
+++    "intra_contact_number": 2,
+++    "inter_contact_number": 2,
+++    "weights_helicity": -0.3,
+++    "random_helicity": false,
+++    "use_i_ptm_loss": false,
+++    "weights_iptm": 0.05,
+++    "use_ipsae_loss": true,
+++    "weights_ipsae": 0.05,
+++    "use_rg_loss": true,
+++    "weights_rg": 0.3,
+++    "use_termini_distance_loss": false,
+++    "weights_termini_loss": 0.1,
+++    "enable_mpnn": true,
+++    "mpnn_fix_interface": true,
+++    "num_seqs": 20,
+++    "max_mpnn_sequences": 2,    
+++    "sampling_temp": 0.1,
+++    "backbone_noise": 0.00,
+++    "model_path": "v_48_020",
+++    "mpnn_weights": "soluble",
+++    "save_mpnn_fasta": false,
+++    "num_recycles_design": 1,
+++    "num_recycles_validation": 3,
+++    "optimise_beta": true,
+++    "optimise_beta_extra_soft": 0,
+++    "optimise_beta_extra_temp": 0,
+++    "optimise_beta_recycles_design": 3,
+++    "optimise_beta_recycles_valid": 3,
+++    "remove_unrelaxed_trajectory": true,
+++    "remove_unrelaxed_complex": true,
+++    "remove_binder_monomer": true,
+++    "zip_animations": true,
+++    "zip_plots": true,
+++    "save_trajectory_pickle": false,
+++    "max_trajectories": false,
+++    "enable_rejection_check": true,
+++    "acceptance_rate": 0.01,
+++    "start_monitoring": 600,
+++    "af_params_dir": "",
+++    "dssp_path": "",
+++    "dalphaball_path": ""
+++}
 diff --git a/functions/colabdesign_utils.py b/functions/colabdesign_utils.py
-index 4bb1db5..973ea3d 100644
+index 4bb1db5..bef8fdf 100644
 --- a/functions/colabdesign_utils.py
 +++ b/functions/colabdesign_utils.py
 @@ -50,6 +50,10 @@ def binder_hallucination(design_name, starting_pdb, chain, target_hotspot_residu
@@ -42,7 +257,7 @@ index 4bb1db5..973ea3d 100644
                  (f"{model_num+1}_pAE", 'pae', '<='),
                  (f"{model_num+1}_i_pAE", 'i_pae', '<='),
              ]
-@@ -381,6 +387,47 @@ def add_rg_loss(self, weight=0.1):
+@@ -381,6 +387,56 @@ def add_rg_loss(self, weight=0.1):
      self._callbacks["model"]["loss"].append(loss_fn)
      self.opt["weights"]["rg"] = weight
  
@@ -50,33 +265,42 @@ index 4bb1db5..973ea3d 100644
 +def add_ipsae_loss(self, weight=0.1, pae_cutoff=10.0):
 +    def loss_ipsae(inputs, outputs):
 +        # Access the differentiable PAE matrix
-+        pae = outputs["predicted_aligned_error"]
++        pae_dict = outputs["predicted_aligned_error"]
++        logits = pae_dict["logits"]
++        breaks = pae_dict["breaks"]
++
++        step = breaks[1] - breaks[0]
++        bin_centers = (jnp.append(0.0, breaks) + jnp.append(breaks, breaks[-1] + step)) / 2
++        probs = jax.nn.softmax(logits, axis=-1)
++
++        pae = jnp.sum(probs * bin_centers, axis=-1)
++        pae = jnp.squeeze(pae)
 +
 +        target_mask = jnp.append(jnp.ones(self._target_len), jnp.zeros(self._binder_len))
 +        binder_mask = jnp.append(jnp.zeros(self._target_len), jnp.ones(self._binder_len))
 +
 +        mask_TB = jnp.outer(target_mask, binder_mask)
-+        valid_TB = mask_TB  * (pae < pae_cutoff)
++        valid_TB = jax.lax.stop_gradient(mask_TB  * (pae < pae_cutoff))
 +
-+        n0res_TB = jnp.sum(valid_TB, axis=1, keepdims=True)
++        n0res_TB = jnp.sum(valid_TB, axis=-1, keepdims=True)
 +        L_safe_TB = jnp.maximum(26.0, n0res_TB)
 +        d0_TB = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_TB - 15.0, 1.0 / 3.0) - 1.8)
 +
 +        pae_ptm_TB = 1.0 / (1.0 + jnp.square(pae / d0_TB))
-+        row_means_TB = jnp.sum(pae_ptm_TB * valid_TB, axis=1) / (n0res_TB + 1e-8)
++        row_means_TB = jnp.sum(pae_ptm_TB * valid_TB, axis=-1, keepdims=True) / (n0res_TB + 1e-8)
 +
 +        score_TB = jnp.max(row_means_TB)
 +
 +        # Evaluate Binder -> Target
 +        mask_BT = jnp.outer(binder_mask, target_mask)
-+        valid_BT = mask_BT * (pae < pae_cutoff)
++        valid_BT = jax.lax.stop_gradient(mask_BT * (pae < pae_cutoff))
 +
-+        n0res_BT = jnp.sum(valid_BT, axis=1, keepdims=True)
++        n0res_BT = jnp.sum(valid_BT, axis=-1, keepdims=True)
 +        L_safe_BT = jnp.maximum(26.0, n0res_BT)
 +        d0_BT = jnp.maximum(1.0, 1.24 * jnp.power(L_safe_BT - 15.0, 1.0 / 3.0) - 1.8)
 +
 +        pae_ptm_BT = 1.0 / (1.0 + jnp.square(pae / d0_BT))
-+        row_means_BT = jnp.sum(pae_ptm_BT * valid_BT, axis=1) / (n0res_BT + 1e-8)
++        row_means_BT = jnp.sum(pae_ptm_BT * valid_BT, axis=-1, keepdims=True) / (n0res_BT + 1e-8)
 +
 +        score_BT = jnp.max(row_means_BT)
 +
@@ -91,10 +315,10 @@ index 4bb1db5..973ea3d 100644
  def add_i_ptm_loss(self, weight=0.1):
      def loss_iptm(inputs, outputs):
 diff --git a/functions/generic_utils.py b/functions/generic_utils.py
-index bd6cbce..7582f3e 100644
+index bd6cbce..fa134d2 100644
 --- a/functions/generic_utils.py
 +++ b/functions/generic_utils.py
-@@ -15,7 +15,7 @@ import numpy as np
+@@ -15,13 +15,13 @@ import numpy as np
  # Define labels for dataframes
  def generate_dataframe_labels():
      # labels for trajectory
@@ -103,6 +327,13 @@ index bd6cbce..7582f3e 100644
                          'Relaxed_Clashes', 'Binder_Energy_Score', 'Surface_Hydrophobicity', 'ShapeComplementarity', 'PackStat', 'dG', 'dSASA', 'dG/dSASA', 'Interface_SASA_%', 'Interface_Hydrophobicity', 'n_InterfaceResidues',
                          'n_InterfaceHbonds', 'InterfaceHbondsPercentage', 'n_InterfaceUnsatHbonds', 'InterfaceUnsatHbondsPercentage', 'Interface_Helix%', 'Interface_BetaSheet%', 'Interface_Loop%',
                          'Binder_Helix%', 'Binder_BetaSheet%', 'Binder_Loop%', 'InterfaceAAs', 'Target_RMSD', 'TrajectoryTime', 'Notes', 'TargetSettings', 'Filters', 'AdvancedSettings']
+ 
+     # labels for mpnn designs
+-    core_labels = ['pLDDT', 'pTM', 'i_pTM', 'pAE', 'i_pAE', 'i_pLDDT', 'ss_pLDDT', 'Unrelaxed_Clashes', 'Relaxed_Clashes', 'Binder_Energy_Score', 'Surface_Hydrophobicity',
++    core_labels = ['pLDDT', 'pTM', 'i_pTM', 'ipSAE', 'pAE', 'i_pAE', 'i_pLDDT', 'ss_pLDDT', 'Unrelaxed_Clashes', 'Relaxed_Clashes', 'Binder_Energy_Score', 'Surface_Hydrophobicity',
+                     'ShapeComplementarity', 'PackStat', 'dG', 'dSASA', 'dG/dSASA', 'Interface_SASA_%', 'Interface_Hydrophobicity', 'n_InterfaceResidues', 'n_InterfaceHbonds', 'InterfaceHbondsPercentage',
+                     'n_InterfaceUnsatHbonds', 'InterfaceUnsatHbondsPercentage', 'Interface_Helix%', 'Interface_BetaSheet%', 'Interface_Loop%', 'Binder_Helix%', 
+                     'Binder_BetaSheet%', 'Binder_Loop%', 'InterfaceAAs', 'Hotspot_RMSD', 'Target_RMSD', 'Binder_pLDDT', 'Binder_pTM', 'Binder_pAE', 'Binder_RMSD']
 diff --git a/settings_advanced/ipsae_defaults.json b/settings_advanced/ipsae_defaults.json
 new file mode 100644
 index 0000000..38b4bcc

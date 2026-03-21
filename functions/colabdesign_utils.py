@@ -303,6 +303,7 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, 
                 'pLDDT': round(prediction_metrics['plddt'], 2),
                 'pTM': round(prediction_metrics['ptm'], 2),
                 'i_pTM': round(prediction_metrics['i_ptm'], 2),
+                'ipSAE': round(prediction_metrics.get('ipsae', np.nan), 2),
                 'pAE': round(prediction_metrics['pae'], 2),
                 'i_pAE': round(prediction_metrics['i_pae'], 2)
             }
@@ -313,6 +314,7 @@ def predict_binder_complex(prediction_model, binder_sequence, mpnn_design_name, 
                 (f"{model_num+1}_pLDDT", 'plddt', '>='),
                 (f"{model_num+1}_pTM", 'ptm', '>='),
                 (f"{model_num+1}_i_pTM", 'i_ptm', '>='),
+                (f"{model_num+1}_ipSAE", 'ipsae', '>='),
                 (f"{model_num+1}_pAE", 'pae', '<='),
                 (f"{model_num+1}_i_pAE", 'i_pae', '<='),
             ]
